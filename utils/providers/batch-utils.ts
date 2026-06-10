@@ -2,9 +2,9 @@
  * Shared helpers for batched detection responses.
  */
 
-import type { DetectedProduct, BatchDetectionResult } from './types';
+import type { DetectedProduct, BatchDetectionResult, Sentiment } from './types';
 
-function isValidProduct(p: { name?: unknown; category?: unknown }): p is DetectedProduct {
+function isValidProduct(p: { name?: unknown; category?: unknown }): boolean {
   return (
     typeof p.name === 'string' &&
     p.name.length > 0 &&
@@ -12,6 +12,20 @@ function isValidProduct(p: { name?: unknown; category?: unknown }): p is Detecte
     typeof p.category === 'string' &&
     p.category.length > 0
   );
+}
+
+function normalizeSentiment(value: unknown): Sentiment {
+  return value === 'positive' || value === 'negative' ? value : 'neutral';
+}
+
+/** Validate and normalize raw product entries from a model response */
+export function normalizeProducts(raw: unknown): DetectedProduct[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(isValidProduct).map((p) => ({
+    name: p.name as string,
+    category: p.category as string,
+    sentiment: normalizeSentiment(p.sentiment),
+  }));
 }
 
 /**
@@ -26,8 +40,8 @@ export function parseBatchResponse(raw: string, count: number): BatchDetectionRe
     if (Array.isArray(parsed?.results)) {
       for (const entry of parsed.results) {
         const i = (typeof entry?.index === 'number' ? entry.index : NaN) - 1;
-        if (i >= 0 && i < count && Array.isArray(entry.products)) {
-          results[i] = entry.products.filter(isValidProduct);
+        if (i >= 0 && i < count) {
+          results[i] = normalizeProducts(entry.products);
         }
       }
     }

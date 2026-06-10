@@ -2,6 +2,7 @@ import { useContext, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { PortalTargetContext } from '@/contexts/PortalTargetContext';
 import { getCachedProductInfo, cacheProductInfo } from '@/utils/product-info-cache';
+import { buildSearchLinks, affiliateEnabled } from '@/utils/affiliate';
 
 interface ProductInfo {
   name: string;
@@ -18,14 +19,21 @@ interface HoverCardProps {
   position: { x: number; y: number };
   productText: string;
   category?: string;
+  sentiment?: 'positive' | 'negative' | 'neutral';
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
 }
+
+const SENTIMENT_BADGE: Record<string, { label: string; color: string; bg: string }> = {
+  positive: { label: '👍 Recommended', color: '#2ecc71', bg: 'rgba(46, 204, 113, 0.15)' },
+  negative: { label: '⚠️ Warned against', color: '#e74c3c', bg: 'rgba(231, 76, 60, 0.15)' },
+};
 
 export function HoverCard({
   position,
   productText,
   category,
+  sentiment,
   onMouseEnter,
   onMouseLeave,
 }: HoverCardProps) {
@@ -57,8 +65,13 @@ export function HoverCard({
 
         if (data && !cancelled) {
           setProductInfo(data);
-          cacheProductInfo(data, category);
-          console.log('[Product Detector] Cached product info for:', productText);
+          // Only persist results that actually have an image. Caching
+          // image:null for 7 days made transient failures (missing key,
+          // quota, timeout) stick — images "stopped showing up".
+          if (data.image) {
+            cacheProductInfo(data, category);
+            console.log('[Product Detector] Cached product info for:', productText);
+          }
         }
       } catch (error) {
         console.error('[Product Detector] Failed to fetch product info:', error);
@@ -96,12 +109,9 @@ export function HoverCard({
     : productText;
 
   // Always build our own search links with category context — API-provided links
-  // often search just the name which leads to wrong results for ambiguous names
-  const searchLinks = {
-    amazon: `https://www.amazon.com/s?k=${encodeURIComponent(searchQuery)}`,
-    googleShopping: `https://www.google.com/search?tbm=shop&q=${encodeURIComponent(searchQuery)}`,
-    google: `https://www.google.com/search?q=${encodeURIComponent(searchQuery)}`,
-  };
+  // often search just the name which leads to wrong results for ambiguous names.
+  // Links include the Amazon Associates tag when configured (utils/affiliate.ts).
+  const searchLinks = buildSearchLinks(searchQuery);
 
   const cardContent = (
     <div
@@ -202,21 +212,39 @@ export function HoverCard({
           >
             {productText}
           </div>
-          {category && (
-            <div
-              style={{
-                display: 'inline-block',
-                padding: '2px 8px',
-                backgroundColor: '#272729',
-                borderRadius: '4px',
-                fontSize: '11px',
-                color: '#818384',
-                textTransform: 'capitalize',
-              }}
-            >
-              {category}
-            </div>
-          )}
+          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+            {category && (
+              <div
+                style={{
+                  display: 'inline-block',
+                  padding: '2px 8px',
+                  backgroundColor: '#272729',
+                  borderRadius: '4px',
+                  fontSize: '11px',
+                  color: '#818384',
+                  textTransform: 'capitalize',
+                }}
+              >
+                {category}
+              </div>
+            )}
+            {sentiment && SENTIMENT_BADGE[sentiment] && (
+              <div
+                style={{
+                  display: 'inline-block',
+                  padding: '2px 8px',
+                  backgroundColor: SENTIMENT_BADGE[sentiment].bg,
+                  borderRadius: '4px',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  color: SENTIMENT_BADGE[sentiment].color,
+                }}
+                title="How this commenter feels about the product"
+              >
+                {SENTIMENT_BADGE[sentiment].label}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -279,6 +307,21 @@ export function HoverCard({
           Google
         </a>
       </div>
+
+      {/* Affiliate disclosure — required by Amazon Associates ToS */}
+      {affiliateEnabled() && (
+        <div
+          style={{
+            padding: '4px 12px 8px',
+            backgroundColor: '#272729',
+            color: '#818384',
+            fontSize: '10px',
+            textAlign: 'center',
+          }}
+        >
+          As an Amazon Associate we earn from qualifying purchases
+        </div>
+      )}
 
       {/* CSS for spinner animation */}
       <style>{`

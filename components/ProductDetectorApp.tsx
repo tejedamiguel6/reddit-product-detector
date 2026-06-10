@@ -8,7 +8,9 @@ import {
   type ProductMatch,
 } from '@/utils/product-detector';
 import { HoverCard } from './HoverCard';
+import { ThreadSummaryPanel, type ThreadProduct } from './ThreadSummaryPanel';
 import type { SiteConfig } from '@/utils/site-settings';
+import type { Sentiment } from '@/utils/providers/types';
 
 interface Props {
   ctx: ContentScriptContext;
@@ -18,10 +20,13 @@ interface Props {
 interface HoverState {
   productText: string;
   category?: string;
+  sentiment?: Sentiment;
   position: { x: number; y: number };
 }
 
 // CSS to inject into the page (avoids CSP inline style issues)
+// Underline color reflects the commenter's sentiment toward the product:
+// green = recommended, red = warned against, orange = neutral/unclear
 const HIGHLIGHT_CSS = `
 .pd-highlight {
   background-color: rgba(255, 215, 0, 0.3) !important;
@@ -32,6 +37,20 @@ const HIGHLIGHT_CSS = `
 }
 .pd-highlight:hover {
   background-color: rgba(255, 165, 0, 0.5) !important;
+}
+.pd-highlight.pd-positive {
+  background-color: rgba(70, 200, 120, 0.25) !important;
+  border-bottom-color: #2ecc71 !important;
+}
+.pd-highlight.pd-positive:hover {
+  background-color: rgba(70, 200, 120, 0.45) !important;
+}
+.pd-highlight.pd-negative {
+  background-color: rgba(231, 76, 60, 0.2) !important;
+  border-bottom-color: #e74c3c !important;
+}
+.pd-highlight.pd-negative:hover {
+  background-color: rgba(231, 76, 60, 0.4) !important;
 }
 `;
 
@@ -47,6 +66,53 @@ function injectStyles() {
 
 export function ProductDetectorApp({ ctx, siteConfig }: Props) {
   const [hoverState, setHoverState] = useState<HoverState | null>(null);
+  // Aggregate of every product detected on this page, keyed by lowercased name
+  const [threadProducts, setThreadProducts] = useState<Map<string, ThreadProduct>>(
+    () => new Map()
+  );
+
+  /**
+   * Register detected products into the thread summary.
+   * Counts each product once per comment (mention = a comment that names it),
+   * and tallies sentiment across comments.
+   */
+  const registerProducts = useCallback((matches: ProductMatch[]) => {
+    if (matches.length === 0) return;
+
+    // Dedupe within this comment — one mention per product per comment
+    const seen = new Map<string, ProductMatch>();
+    for (const match of matches) {
+      const key = match.name.toLowerCase();
+      if (!seen.has(key)) seen.set(key, match);
+    }
+
+    setThreadProducts((prev) => {
+      const next = new Map(prev);
+      for (const [key, match] of seen) {
+        const existing = next.get(key);
+        const sentiment: Sentiment = match.sentiment ?? 'neutral';
+        if (existing) {
+          next.set(key, {
+            ...existing,
+            mentions: existing.mentions + 1,
+            positive: existing.positive + (sentiment === 'positive' ? 1 : 0),
+            negative: existing.negative + (sentiment === 'negative' ? 1 : 0),
+            neutral: existing.neutral + (sentiment === 'neutral' ? 1 : 0),
+          });
+        } else {
+          next.set(key, {
+            name: match.name,
+            category: match.category,
+            mentions: 1,
+            positive: sentiment === 'positive' ? 1 : 0,
+            negative: sentiment === 'negative' ? 1 : 0,
+            neutral: sentiment === 'neutral' ? 1 : 0,
+          });
+        }
+      }
+      return next;
+    });
+  }, []);
   const hoverTimeoutRef = useRef<number | null>(null);
   const processingRef = useRef<Set<Element>>(new Set());
   const intersectionObserverRef = useRef<IntersectionObserver | null>(null);
@@ -98,6 +164,8 @@ export function ProductDetectorApp({ ctx, siteConfig }: Props) {
         // Create the highlight span
         const span = document.createElement('span');
         span.className = 'pd-highlight';
+        if (match.sentiment === 'positive') span.classList.add('pd-positive');
+        if (match.sentiment === 'negative') span.classList.add('pd-negative');
         span.textContent = match.name;
         span.dataset.productName = match.name;
         if (match.category) {
@@ -111,6 +179,7 @@ export function ProductDetectorApp({ ctx, siteConfig }: Props) {
           setHoverState({
             productText: match.name,
             category: match.category,
+            sentiment: match.sentiment,
             position: {
               x: rect.left,
               y: rect.bottom + 8,
@@ -162,6 +231,9 @@ export function ProductDetectorApp({ ctx, siteConfig }: Props) {
         // Call AI to detect products in the full text
         const matches = await detectProducts(fullText);
 
+        // Feed the thread summary (counts each product once per comment)
+        registerProducts(matches);
+
         if (matches.length > 0) {
           console.log('[Product Detector] AI found products:', matches.map(m => m.name));
 
@@ -210,7 +282,7 @@ export function ProductDetectorApp({ ctx, siteConfig }: Props) {
         processingRef.current.delete(element);
       }
     },
-    [highlightProducts]
+    [highlightProducts, registerProducts]
   );
 
   /**
@@ -289,10 +361,12 @@ export function ProductDetectorApp({ ctx, siteConfig }: Props) {
           position={hoverState.position}
           productText={hoverState.productText}
           category={hoverState.category}
+          sentiment={hoverState.sentiment}
           onMouseEnter={cancelClearHover}
           onMouseLeave={clearHoverWithDelay}
         />
       )}
+      <ThreadSummaryPanel products={threadProducts} />
     </>
   );
 }

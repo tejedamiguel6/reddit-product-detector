@@ -12,7 +12,7 @@ import {
   BATCH_USER_PROMPT_TEMPLATE,
   BATCH_DETECTION_SCHEMA,
 } from './prompts';
-import { parseBatchResponse } from './batch-utils';
+import { parseBatchResponse, normalizeProducts } from './batch-utils';
 
 // Type declarations for Chrome's LanguageModel API
 // These aren't in standard TypeScript libs yet
@@ -126,7 +126,16 @@ export class ChromeAIProvider implements LLMProvider {
     }
   }
 
+  // Prompt API sessions are STATEFUL: every prompt() accumulates in the
+  // session's context window until it overflows and errors. Recycle the
+  // session after a few prompts to stay well under the limit.
+  private promptCount = 0;
+  private static readonly MAX_PROMPTS_PER_SESSION = 4;
+
   private async ensureSession(): Promise<LanguageModelSession> {
+    if (this.session && this.promptCount >= ChromeAIProvider.MAX_PROMPTS_PER_SESSION) {
+      this.destroy();
+    }
     if (!this.session) {
       const availability = await LanguageModel.availability();
       if (availability !== 'available') {
@@ -137,6 +146,7 @@ export class ChromeAIProvider implements LLMProvider {
           { role: 'system', content: SYSTEM_PROMPT },
         ],
       });
+      this.promptCount = 0;
     }
     return this.session;
   }
@@ -145,6 +155,7 @@ export class ChromeAIProvider implements LLMProvider {
   async detectProductsBatch(texts: string[]): Promise<BatchDetectionResult> {
     if (texts.length === 0) return { results: [] };
     const session = await this.ensureSession();
+    this.promptCount++;
 
     try {
       const response = await session.prompt(
@@ -161,6 +172,7 @@ export class ChromeAIProvider implements LLMProvider {
 
   async detectProducts(text: string): Promise<DetectionResult> {
     const session = await this.ensureSession();
+    this.promptCount++;
 
     try {
       const response = await session.prompt(
@@ -169,23 +181,7 @@ export class ChromeAIProvider implements LLMProvider {
       );
 
       const parsed = JSON.parse(response);
-
-      // Validate output shape
-      if (!parsed.products || !Array.isArray(parsed.products)) {
-        return { products: [] };
-      }
-
-      // Filter to valid entries only
-      return {
-        products: parsed.products.filter(
-          (p: { name?: unknown; category?: unknown }) =>
-            typeof p.name === 'string' &&
-            p.name.length > 0 &&
-            p.name.length <= 200 &&
-            typeof p.category === 'string' &&
-            p.category.length > 0
-        ),
-      };
+      return { products: normalizeProducts(parsed?.products) };
     } catch (error) {
       // If session is broken, destroy and retry next time
       this.destroy();

@@ -3,9 +3,13 @@
  * All providers implement the LLMProvider interface so they're interchangeable.
  */
 
+export type Sentiment = 'positive' | 'negative' | 'neutral';
+
 export interface DetectedProduct {
   name: string;
   category: string;
+  /** How the commenter feels about the product (defaults to neutral) */
+  sentiment?: Sentiment;
 }
 
 export interface DetectionResult {

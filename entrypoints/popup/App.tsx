@@ -6,6 +6,7 @@ import {
   toggleSite,
   type SiteConfig,
 } from '@/utils/site-settings';
+import { BUY_ME_A_COFFEE_URL } from '@/utils/affiliate';
 
 type ProviderStatus = {
   available: boolean;
@@ -431,6 +432,32 @@ export function App() {
       <p className="hint">
         Products will be highlighted in yellow on enabled sites.
       </p>
+
+      {/* Support button */}
+      {BUY_ME_A_COFFEE_URL && (
+        <a
+          href={BUY_ME_A_COFFEE_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '6px',
+            padding: '10px',
+            marginTop: '10px',
+            fontSize: '13px',
+            fontWeight: 600,
+            color: '#000',
+            backgroundColor: '#ffdd00',
+            borderRadius: '8px',
+            textDecoration: 'none',
+            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.3)',
+          }}
+        >
+          ☕ Enjoying this? Buy me a coffee
+        </a>
+      )}
     </div>
   );
 }

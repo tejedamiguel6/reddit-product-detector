@@ -21,7 +21,7 @@ interface CacheData {
 }
 
 const CACHE_KEY = 'pd_product_info_cache';
-const CACHE_VERSION = 2; // Bumped to clear stale results with missing category context
+const CACHE_VERSION = 3; // Bumped to clear stale image:null entries cached by transient failures
 const MAX_CACHE_ENTRIES = 500; // Limit cache size
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 

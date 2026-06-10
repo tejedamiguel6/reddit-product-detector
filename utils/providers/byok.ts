@@ -6,7 +6,7 @@
 
 import type { LLMProvider, ProviderStatus, DetectionResult, BatchDetectionResult } from './types';
 import { SYSTEM_PROMPT, USER_PROMPT_TEMPLATE, BATCH_USER_PROMPT_TEMPLATE } from './prompts';
-import { parseBatchResponse } from './batch-utils';
+import { parseBatchResponse, normalizeProducts } from './batch-utils';
 
 export interface BYOKConfig {
   provider: 'openai' | 'anthropic' | 'google';
@@ -201,21 +201,7 @@ export class BYOKProvider implements LLMProvider {
   private parseResponse(raw: string): DetectionResult {
     try {
       const parsed = JSON.parse(raw);
-
-      if (!parsed.products || !Array.isArray(parsed.products)) {
-        return { products: [] };
-      }
-
-      return {
-        products: parsed.products.filter(
-          (p: { name?: unknown; category?: unknown }) =>
-            typeof p.name === 'string' &&
-            p.name.length > 0 &&
-            p.name.length <= 200 &&
-            typeof p.category === 'string' &&
-            p.category.length > 0
-        ),
-      };
+      return { products: normalizeProducts(parsed?.products) };
     } catch {
       console.error('[BYOK] Failed to parse LLM response:', raw.slice(0, 200));
       return { products: [] };

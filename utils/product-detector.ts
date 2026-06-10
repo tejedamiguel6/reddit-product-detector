@@ -4,11 +4,15 @@
  * which picks the best available LLM provider (Chrome AI → BYOK).
  */
 
+import type { Sentiment } from './providers/types';
+
 export interface ProductMatch {
   /** The matched product name */
   name: string;
   /** Product category (optional) */
   category?: string;
+  /** Commenter's sentiment toward the product */
+  sentiment?: Sentiment;
   /** Start index in the original text */
   startIndex: number;
   /** End index in the original text */
@@ -18,6 +22,7 @@ export interface ProductMatch {
 export interface DetectedProduct {
   name: string;
   category?: string;
+  sentiment?: Sentiment;
 }
 
 // Per-tab in-memory cache to avoid even messaging the background worker.
@@ -177,6 +182,7 @@ function findProductPositions(text: string, products: DetectedProduct[]): Produc
       matches.push({
         name: text.slice(index, index + product.name.length), // Use original case
         category: product.category,
+        sentiment: product.sentiment,
         startIndex: index,
         endIndex: index + product.name.length,
       });

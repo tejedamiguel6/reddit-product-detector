@@ -12,7 +12,8 @@
 
 import type { DetectedProduct } from './providers/types';
 
-const STORAGE_KEY = 'rpd_detection_cache_v1';
+// v2: entries now include sentiment — old sentiment-less results re-detect
+const STORAGE_KEY = 'rpd_detection_cache_v2';
 const MAX_ENTRIES = 800;
 const TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const PERSIST_DEBOUNCE_MS = 2000;

@@ -3,6 +3,8 @@
  * Runs in the background service worker — no separate API server needed.
  */
 
+import { buildSearchLinks } from './affiliate';
+
 // In-memory LRU cache
 const IMAGE_CACHE_MAX = 300;
 const imageCache = new Map<string, { url: string | null; ts: number }>();
@@ -67,11 +69,7 @@ export async function fetchProductInfo(
     name: productName,
     image: null,
     imageSearchUrl: `https://www.google.com/search?tbm=isch&q=${encoded}`,
-    searchLinks: {
-      amazon: `https://www.amazon.com/s?k=${encoded}`,
-      googleShopping: `https://www.google.com/search?tbm=shop&q=${encoded}`,
-      google: `https://www.google.com/search?q=${encoded}`,
-    },
+    searchLinks: buildSearchLinks(searchQuery),
   };
 
   // Try to get image from Serper
@@ -98,8 +96,9 @@ async function searchImage(
   const apiKey = stored.serperApiKey;
 
   if (!apiKey) {
-    console.log('[Image Search] No Serper API key configured');
-    setCache(cacheKey, null);
+    // Don't cache this — once the user adds a key, images should work
+    // immediately instead of being stuck as cached nulls.
+    console.warn('[Image Search] No Serper API key configured — set it in the extension popup');
     return null;
   }
 
@@ -153,11 +152,12 @@ async function searchImage(
       }
     }
 
+    // Search succeeded but genuinely found nothing — caching null is correct here
     setCache(cacheKey, null);
     return null;
   } catch (error) {
+    // Transient failure (quota, timeout, network) — do NOT cache, retry next hover
     console.error('[Image Search] Error:', error);
-    setCache(cacheKey, null);
     return null;
   }
 }
