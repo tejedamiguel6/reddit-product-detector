@@ -1,0 +1,477 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 14px;
+  background-color: #1a1a1b;
+  color: #d7dadc;
+}
+
+.popup-container {
+  width: 320px;
+  padding: 16px;
+}
+
+h1 {
+  font-size: 18px;
+  font-weight: 600;
+  color: #ffffff;
+  margin-bottom: 4px;
+}
+
+h2 {
+  font-size: 12px;
+  font-weight: 600;
+  color: #818384;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+.description {
+  color: #818384;
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+
+.loading {
+  text-align: center;
+  padding: 20px;
+  color: #818384;
+}
+
+/* ─── Provider status bar ─────────────────────────────── */
+
+.provider-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background-color: #272729;
+  border: 1px solid #343536;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.provider-bar:hover {
+  border-color: #4a4a4c;
+}
+
+.provider-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.provider-bar-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #d7dadc;
+}
+
+.provider-bar-toggle {
+  font-size: 10px;
+  color: #818384;
+}
+
+/* ─── Status dots ─────────────────────────────────────── */
+
+.status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dot-active {
+  background-color: #46d160;
+  box-shadow: 0 0 4px #46d16088;
+}
+
+.dot-available {
+  background-color: #818384;
+}
+
+.dot-unavailable {
+  background-color: #ff4500;
+}
+
+.dot-unknown {
+  background-color: #343536;
+}
+
+/* ─── Provider settings panel ─────────────────────────── */
+
+.provider-settings {
+  margin-bottom: 12px;
+}
+
+.provider-option {
+  background-color: #272729;
+  border: 1px solid #343536;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.provider-option:hover {
+  border-color: #4a4a4c;
+}
+
+.provider-active {
+  border-color: #46d160;
+}
+
+.provider-option-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.provider-option-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #d7dadc;
+  flex: 1;
+}
+
+.provider-option-badge {
+  font-size: 11px;
+  color: #818384;
+  background-color: #1a1a1b;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.provider-option-desc {
+  font-size: 12px;
+  color: #818384;
+  margin-top: 6px;
+  padding-left: 16px;
+}
+
+/* ─── Chrome AI download ──────────────────────────────── */
+
+.dot-downloadable {
+  background-color: #ffb000;
+}
+
+.dot-downloading {
+  background-color: #ffb000;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.btn-download-chrome-ai {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 8px 12px;
+  background-color: #1a6b3c;
+  border: 1px solid #2d9a5a;
+  border-radius: 6px;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+}
+
+.btn-download-chrome-ai:hover:not(:disabled) {
+  background-color: #2d9a5a;
+}
+
+.btn-download-chrome-ai:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.chrome-ai-progress {
+  margin-top: 8px;
+}
+
+.progress-bar-track {
+  height: 4px;
+  background-color: #343536;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  width: 40%;
+  background-color: #ffb000;
+  border-radius: 2px;
+  animation: indeterminate 1.5s ease-in-out infinite;
+}
+
+@keyframes indeterminate {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(350%); }
+}
+
+.progress-text {
+  display: block;
+  font-size: 11px;
+  color: #818384;
+  margin-top: 4px;
+}
+
+/* ─── BYOK config form ────────────────────────────────── */
+
+.byok-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #343536;
+}
+
+.byok-select {
+  padding: 6px 10px;
+  border: 1px solid #343536;
+  border-radius: 4px;
+  background-color: #1a1a1b;
+  color: #d7dadc;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.byok-select:focus {
+  outline: none;
+  border-color: #ff4500;
+}
+
+.byok-input {
+  padding: 6px 10px;
+  border: 1px solid #343536;
+  border-radius: 4px;
+  background-color: #1a1a1b;
+  color: #d7dadc;
+  font-size: 13px;
+}
+
+.byok-input::placeholder {
+  color: #818384;
+}
+
+.byok-input:focus {
+  outline: none;
+  border-color: #ff4500;
+}
+
+.btn-save-byok {
+  padding: 6px 12px;
+  background-color: #ff4500;
+  border: none;
+  border-radius: 4px;
+  color: white;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  align-self: flex-end;
+}
+
+.btn-save-byok:hover:not(:disabled) {
+  background-color: #ff5722;
+}
+
+.btn-save-byok:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ─── Current site banner ─────────────────────────────── */
+
+.current-site-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background-color: #272729;
+  border: 1px solid #343536;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 16px;
+}
+
+.current-site-banner span {
+  color: #818384;
+  font-size: 13px;
+}
+
+.btn-add-current {
+  background-color: #ff4500;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.btn-add-current:hover {
+  background-color: #ff5722;
+}
+
+/* ─── Sites section ───────────────────────────────────── */
+
+.sites-section {
+  margin-bottom: 16px;
+}
+
+.sites-list {
+  list-style: none;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.site-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px;
+  border-radius: 4px;
+  margin-bottom: 4px;
+}
+
+.site-item:hover {
+  background-color: #272729;
+}
+
+.site-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  flex: 1;
+  min-width: 0;
+}
+
+.site-toggle input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: #ff4500;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.site-name {
+  font-weight: 500;
+  color: #d7dadc;
+  flex-shrink: 0;
+}
+
+.site-hostname {
+  color: #818384;
+  font-size: 11px;
+  margin-left: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.btn-remove {
+  background: none;
+  border: none;
+  color: #818384;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.btn-remove:hover {
+  background-color: #343536;
+  color: #ff4500;
+}
+
+/* ─── Add site section ────────────────────────────────── */
+
+.add-site-section {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.input-site {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #343536;
+  border-radius: 4px;
+  background-color: #272729;
+  color: #d7dadc;
+  font-size: 13px;
+}
+
+.input-site::placeholder {
+  color: #818384;
+}
+
+.input-site:focus {
+  outline: none;
+  border-color: #ff4500;
+}
+
+.btn-add {
+  padding: 8px 16px;
+  background-color: #272729;
+  border: 1px solid #343536;
+  border-radius: 4px;
+  color: #d7dadc;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.btn-add:hover:not(:disabled) {
+  background-color: #343536;
+}
+
+.btn-add:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.hint {
+  font-size: 12px;
+  color: #818384;
+  text-align: center;
+}
+
+/* ─── Scrollbar styling ───────────────────────────────── */
+
+.sites-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sites-list::-webkit-scrollbar-track {
+  background: #1a1a1b;
+}
+
+.sites-list::-webkit-scrollbar-thumb {
+  background: #343536;
+  border-radius: 3px;
+}
+
+.sites-list::-webkit-scrollbar-thumb:hover {
+  background: #818384;
+}

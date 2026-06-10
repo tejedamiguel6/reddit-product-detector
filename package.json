@@ -1,0 +1,30 @@
+{
+  "name": "reddit-product-detector",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "wxt",
+    "dev:firefox": "wxt -b firefox",
+    "build": "wxt build",
+    "build:firefox": "wxt build -b firefox",
+    "zip": "wxt zip",
+    "zip:firefox": "wxt zip -b firefox",
+    "clean": "wxt clean",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": ["chrome-extension", "reddit", "product-detection"],
+  "author": "",
+  "license": "ISC",
+  "description": "Chrome extension that detects and highlights product mentions on Reddit",
+  "dependencies": {
+    "@wxt-dev/module-react": "^1.1.5",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "wxt": "^0.20.13"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.10",
+    "@types/react-dom": "^19.2.3",
+    "typescript": "^5.9.3"
+  }
+}

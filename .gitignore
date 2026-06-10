@@ -1,0 +1,41 @@
+# dependencies
+/node_modules
+
+# build output
+/build
+/.output
+/.wxt
+
+# env files
+.env*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Claude Code local settings
+.claude/
+
+# typescript
+*.tsbuildinfo
+
+# extension zip builds
+*.zip
+*.crx
+web-ext-artifacts/
+
+# markdown docs (internal notes, plans, handoffs)
+*.md
+!README.md
