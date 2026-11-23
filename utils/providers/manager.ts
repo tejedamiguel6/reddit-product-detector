@@ -1,3 +1,4 @@
+import { debug } from '@/utils/log';
 /**
  * Provider manager — handles selection, fallback, and routing.
  * Tries Chrome AI first, falls back to BYOK if unavailable.
@@ -28,10 +29,10 @@ export class ProviderManager {
       const status = await this.providers.get(preferred)!.checkStatus();
       if (status.available) {
         this.activeProviderId = preferred;
-        console.log(`[Provider] Using preferred: ${preferred}`);
+        debug(`[Provider] Using preferred: ${preferred}`);
         return;
       }
-      console.log(`[Provider] Preferred provider '${preferred}' not available, auto-detecting...`);
+      debug(`[Provider] Preferred provider '${preferred}' not available, auto-detecting...`);
     }
 
     // Auto-detect: try chrome-ai first, then byok
@@ -42,7 +43,7 @@ export class ProviderManager {
         const status = await provider.checkStatus();
         if (status.available) {
           this.activeProviderId = id;
-          console.log(`[Provider] Auto-selected: ${id}`);
+          debug(`[Provider] Auto-selected: ${id}`);
           return;
         }
       }
@@ -81,12 +82,19 @@ export class ProviderManager {
    * not cache entries produced after the error).
    */
   async detectProductsBatch(texts: string[]): Promise<BatchDetectionResult> {
-    const provider = this.getActiveProvider();
+    let provider = this.getActiveProvider();
+    if (!provider) {
+      // A provider may have become ready since startup (model finished
+      // downloading, key just saved) — look again before giving up.
+      await this.initialize();
+      provider = this.getActiveProvider();
+    }
     if (!provider) {
       console.warn('[Provider] No active provider');
       return {
         results: texts.map(() => []),
         error: 'No AI provider available. Configure one in extension settings.',
+        errorCode: 'no_provider',
       };
     }
 

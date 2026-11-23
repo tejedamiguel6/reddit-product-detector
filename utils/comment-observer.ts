@@ -1,6 +1,23 @@
+import { debug } from '@/utils/log';
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { getSelectorsForSite, getContentElements, isUserContent } from './generic-selectors';
 import type { SiteConfig } from './site-settings';
+
+/**
+ * Several selectors can match the same comment at different depths (on new
+ * Reddit, both the comment slot and the `.md` inside it). Analysing both
+ * would count every mention twice, so keep only the outermost match.
+ */
+function outermostOnly(elements: Element[], selector: string): Element[] {
+  const unique = [...new Set(elements)];
+  return unique.filter((el) => {
+    try {
+      return !el.parentElement?.closest(selector);
+    } catch {
+      return true; // invalid custom selector: keep the element
+    }
+  });
+}
 
 /**
  * Creates a MutationObserver that watches for new content being added to the page.
@@ -14,13 +31,15 @@ export function observeContent(
   const hostname = window.location.hostname;
   const selector = getSelectorsForSite(hostname, siteConfig?.selectors);
 
-  console.log('[Product Detector] Using selectors for', hostname);
+  debug('[Product Detector] Using selectors for', hostname);
 
   // Process existing content on initial load
-  const existingContent = getContentElements(hostname, siteConfig?.selectors)
-    .filter(isUserContent);
+  const existingContent = outermostOnly(
+    getContentElements(hostname, siteConfig?.selectors).filter(isUserContent),
+    selector
+  );
 
-  console.log('[Product Detector] Found', existingContent.length, 'existing content elements');
+  debug('[Product Detector] Found', existingContent.length, 'existing content elements');
 
   if (existingContent.length > 0) {
     onContentFound(existingContent);
@@ -57,9 +76,10 @@ export function observeContent(
       }
     }
 
-    if (newContent.length > 0) {
-      console.log('[Product Detector] Found', newContent.length, 'new content elements');
-      onContentFound(newContent);
+    const unique = outermostOnly(newContent, selector);
+    if (unique.length > 0) {
+      debug('[Product Detector] Found', unique.length, 'new content elements');
+      onContentFound(unique);
     }
   });
 

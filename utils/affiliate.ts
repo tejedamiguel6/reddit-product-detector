@@ -20,6 +20,12 @@ export const AMAZON_AFFILIATE_TAG = '';
  */
 export const BUY_ME_A_COFFEE_URL = 'https://buymeacoffee.com/botsd0ntcry';
 
+/**
+ * ✍️ Your Substack (or other writing) URL, shown on the welcome page under
+ * "How this is funded". Empty = link hidden.
+ */
+export const SUBSTACK_URL = '';
+
 export interface SearchLinks {
   amazon: string;
   googleShopping: string;

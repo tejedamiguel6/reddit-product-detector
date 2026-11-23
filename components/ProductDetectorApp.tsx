@@ -1,14 +1,29 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { debug } from '@/utils/log';
+import { useContext, useEffect, useState, useCallback, useRef } from 'react';
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { observeContent } from '@/utils/comment-observer';
 import {
   detectProducts,
   isAlreadyProcessed,
   markAsProcessed,
+  onNoProvider,
   type ProductMatch,
 } from '@/utils/product-detector';
-import { HoverCard } from './HoverCard';
-import { ThreadSummaryPanel, type ThreadProduct } from './ThreadSummaryPanel';
+import { HoverCard, type HoverAnchor } from './HoverCard';
+import { injectHighlightStyles, setHighlightTheme } from '@/utils/highlight-styles';
+import { watchPageTheme } from '@/utils/page-theme';
+import { PortalTargetContext } from '@/contexts/PortalTargetContext';
+import { ThreadSummaryPanel } from './ThreadSummaryPanel';
+import { SetupNudge } from './SetupNudge';
+import { UI_CSS } from './ui-styles';
+import {
+  buildThreadProducts,
+  extractQuote,
+  findThreadProduct,
+  topPick,
+  type CommentDetection,
+  type ThreadProduct,
+} from '@/utils/thread-products';
 import type { SiteConfig } from '@/utils/site-settings';
 import type { Sentiment } from '@/utils/providers/types';
 
@@ -21,99 +36,112 @@ interface HoverState {
   productText: string;
   category?: string;
   sentiment?: Sentiment;
-  position: { x: number; y: number };
+  anchor: HoverAnchor;
+  /** The comment the hovered name sits in */
+  commentElement: Element | null;
 }
 
-// CSS to inject into the page (avoids CSP inline style issues)
-// Underline color reflects the commenter's sentiment toward the product:
-// green = recommended, red = warned against, orange = neutral/unclear
-const HIGHLIGHT_CSS = `
-.pd-highlight {
-  background-color: rgba(255, 215, 0, 0.3) !important;
-  border-bottom: 2px solid #ffa500 !important;
-  cursor: pointer !important;
-  padding: 0 2px !important;
-  border-radius: 2px !important;
+export interface ScanProgress {
+  done: number;
+  total: number;
 }
-.pd-highlight:hover {
-  background-color: rgba(255, 165, 0, 0.5) !important;
-}
-.pd-highlight.pd-positive {
-  background-color: rgba(70, 200, 120, 0.25) !important;
-  border-bottom-color: #2ecc71 !important;
-}
-.pd-highlight.pd-positive:hover {
-  background-color: rgba(70, 200, 120, 0.45) !important;
-}
-.pd-highlight.pd-negative {
-  background-color: rgba(231, 76, 60, 0.2) !important;
-  border-bottom-color: #e74c3c !important;
-}
-.pd-highlight.pd-negative:hover {
-  background-color: rgba(231, 76, 60, 0.4) !important;
-}
-`;
 
-// Inject styles once
-let stylesInjected = false;
-function injectStyles() {
-  if (stylesInjected) return;
-  const style = document.createElement('style');
-  style.textContent = HIGHLIGHT_CSS;
-  document.head.appendChild(style);
-  stylesInjected = true;
-}
+// How many comments "read the rest" hands to the model at a time. Small
+// enough that progress moves and Cancel takes effect quickly.
+const SCAN_GROUP_SIZE = 6;
+
+// Pause before a card opens, so sweeping the mouse across a paragraph
+// doesn't fire a card for every name on the way.
+const HOVER_OPEN_DELAY_MS = 140;
 
 export function ProductDetectorApp({ ctx, siteConfig }: Props) {
   const [hoverState, setHoverState] = useState<HoverState | null>(null);
-  // Aggregate of every product detected on this page, keyed by lowercased name
-  const [threadProducts, setThreadProducts] = useState<Map<string, ThreadProduct>>(
-    () => new Map()
-  );
+  // Every product detected on this page, ranked for the summary panel
+  const [threadProducts, setThreadProducts] = useState<ThreadProduct[]>([]);
+  // How many comments have been analysed so far (with or without products)
+  const [commentsRead, setCommentsRead] = useState(0);
+  // Comments found on the page but not analysed yet (not scrolled to)
+  const [pendingCount, setPendingCount] = useState(0);
+  // Progress of "read the rest of this page", or null when not running
+  const [scan, setScan] = useState<ScanProgress | null>(null);
+  const scanRunRef = useRef<{ cancelled: boolean } | null>(null);
+  // Latest summary, readable from message listeners without re-subscribing
+  const summaryRef = useRef({ products: threadProducts, commentsRead });
+  summaryRef.current = { products: threadProducts, commentsRead };
+
+  // What each analysed comment contributed. The summary is rebuilt from the
+  // comments still attached to the document, so products from a thread the
+  // user navigated away from (Reddit swaps pages without a reload) drop out.
+  const resultsRef = useRef<Map<Element, CommentDetection[]>>(new Map());
+
+  const rebuildSummary = useCallback(() => {
+    const results = resultsRef.current;
+    for (const element of results.keys()) {
+      if (!element.isConnected) results.delete(element);
+    }
+    setCommentsRead(results.size);
+    setThreadProducts(
+      buildThreadProducts(
+        [...results].map(([element, detections]) => ({ element, detections }))
+      )
+    );
+  }, []);
 
   /**
-   * Register detected products into the thread summary.
-   * Counts each product once per comment (mention = a comment that names it),
-   * and tallies sentiment across comments.
+   * Record one comment's detections: each product once per comment, with the
+   * sentence that names it.
    */
-  const registerProducts = useCallback((matches: ProductMatch[]) => {
-    if (matches.length === 0) return;
-
-    // Dedupe within this comment — one mention per product per comment
-    const seen = new Map<string, ProductMatch>();
-    for (const match of matches) {
-      const key = match.name.toLowerCase();
-      if (!seen.has(key)) seen.set(key, match);
-    }
-
-    setThreadProducts((prev) => {
-      const next = new Map(prev);
-      for (const [key, match] of seen) {
-        const existing = next.get(key);
-        const sentiment: Sentiment = match.sentiment ?? 'neutral';
-        if (existing) {
-          next.set(key, {
-            ...existing,
-            mentions: existing.mentions + 1,
-            positive: existing.positive + (sentiment === 'positive' ? 1 : 0),
-            negative: existing.negative + (sentiment === 'negative' ? 1 : 0),
-            neutral: existing.neutral + (sentiment === 'neutral' ? 1 : 0),
-          });
-        } else {
-          next.set(key, {
-            name: match.name,
-            category: match.category,
-            mentions: 1,
-            positive: sentiment === 'positive' ? 1 : 0,
-            negative: sentiment === 'negative' ? 1 : 0,
-            neutral: sentiment === 'neutral' ? 1 : 0,
-          });
-        }
+  const registerComment = useCallback(
+    (element: Element, fullText: string, matches: ProductMatch[]) => {
+      const seen = new Set<string>();
+      const detections: CommentDetection[] = [];
+      for (const match of matches) {
+        const key = match.name.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        detections.push({
+          name: match.name,
+          category: match.category,
+          sentiment: match.sentiment ?? 'neutral',
+          quote: extractQuote(fullText, match.startIndex, match.endIndex),
+        });
       }
-      return next;
+      resultsRef.current.set(element, detections);
+      rebuildSummary();
+    },
+    [rebuildSummary]
+  );
+
+  // In-page navigation (Reddit, Product Hunt): the old thread's comments are
+  // removed a moment after the URL changes, so rebuild now and again shortly.
+  useEffect(() => {
+    let lastPath = window.location.pathname;
+    let timer: number | undefined;
+    ctx.addEventListener(window, 'wxt:locationchange', () => {
+      if (window.location.pathname === lastPath) return;
+      lastPath = window.location.pathname;
+      setHoverState(null);
+      if (scanRunRef.current) scanRunRef.current.cancelled = true;
+      rebuildSummary();
+      window.clearTimeout(timer);
+      timer = window.setTimeout(rebuildSummary, 1500);
     });
-  }, []);
+    return () => window.clearTimeout(timer);
+  }, [ctx, rebuildSummary]);
+
   const hoverTimeoutRef = useRef<number | null>(null);
+  const hoverOpenRef = useRef<number | undefined>(undefined);
+  const hoverVisibleRef = useRef(false);
+  hoverVisibleRef.current = hoverState !== null;
+
+  // The card is pinned to the viewport, so it would drift away from its
+  // name while scrolling. Close it instead.
+  useEffect(() => {
+    if (!hoverState) return;
+    const close = () => setHoverState(null);
+    window.addEventListener('scroll', close, { passive: true, capture: true });
+    return () => window.removeEventListener('scroll', close, { capture: true });
+  }, [hoverState !== null]);
   const processingRef = useRef<Set<Element>>(new Set());
   const intersectionObserverRef = useRef<IntersectionObserver | null>(null);
   const pendingElementsRef = useRef<Set<Element>>(new Set());
@@ -144,7 +172,7 @@ export function ProductDetectorApp({ ctx, siteConfig }: Props) {
       if (matches.length === 0) return;
 
       // Ensure styles are injected
-      injectStyles();
+      injectHighlightStyles();
 
       const text = textNode.textContent || '';
       const fragment = document.createDocumentFragment();
@@ -175,19 +203,24 @@ export function ProductDetectorApp({ ctx, siteConfig }: Props) {
         // Add hover listeners
         span.addEventListener('mouseenter', () => {
           cancelClearHover();
-          const rect = span.getBoundingClientRect();
-          setHoverState({
-            productText: match.name,
-            category: match.category,
-            sentiment: match.sentiment,
-            position: {
-              x: rect.left,
-              y: rect.bottom + 8,
-            },
-          });
+          const show = () => {
+            const rect = span.getBoundingClientRect();
+            setHoverState({
+              productText: match.name,
+              category: match.category,
+              sentiment: match.sentiment,
+              anchor: { left: rect.left, top: rect.top, bottom: rect.bottom },
+              commentElement: span.closest('[data-rpd-scanned]'),
+            });
+          };
+          window.clearTimeout(hoverOpenRef.current);
+          // Already showing a card: switch straight away. Otherwise wait a beat.
+          if (hoverVisibleRef.current) show();
+          else hoverOpenRef.current = window.setTimeout(show, HOVER_OPEN_DELAY_MS);
         });
 
         span.addEventListener('mouseleave', () => {
+          window.clearTimeout(hoverOpenRef.current);
           clearHoverWithDelay();
         });
 
@@ -225,17 +258,20 @@ export function ProductDetectorApp({ ctx, siteConfig }: Props) {
         return;
       }
 
-      console.log('[Product Detector] Processing content:', fullText.slice(0, 80) + '...');
+      debug('[Product Detector] Processing content:', fullText.slice(0, 80) + '...');
 
       try {
         // Call AI to detect products in the full text
         const matches = await detectProducts(fullText);
 
+        // The comment may have been removed while the model was working
+        if (!element.isConnected) return;
+
         // Feed the thread summary (counts each product once per comment)
-        registerProducts(matches);
+        registerComment(element, fullText, matches);
 
         if (matches.length > 0) {
-          console.log('[Product Detector] AI found products:', matches.map(m => m.name));
+          debug('[Product Detector] AI found products:', matches.map(m => m.name));
 
           // Walk through text nodes and highlight matches
           const walker = document.createTreeWalker(
@@ -282,7 +318,7 @@ export function ProductDetectorApp({ ctx, siteConfig }: Props) {
         processingRef.current.delete(element);
       }
     },
-    [highlightProducts, registerProducts]
+    [highlightProducts, registerComment]
   );
 
   /**
@@ -302,9 +338,68 @@ export function ProductDetectorApp({ ctx, siteConfig }: Props) {
         pendingElementsRef.current.add(element);
         observer.observe(element);
       }
+      setPendingCount(pendingElementsRef.current.size);
     },
     []
   );
+
+  /**
+   * Analyse every comment on the page that hasn't been scrolled to yet, a
+   * few at a time, so the summary covers the whole loaded thread.
+   */
+  const scanRest = useCallback(async () => {
+    if (scanRunRef.current) return;
+    const run = { cancelled: false };
+    scanRunRef.current = run;
+
+    const pending = pendingElementsRef.current;
+    const elements = [...pending].filter((el) => el.isConnected);
+    setScan({ done: 0, total: elements.length });
+
+    for (let i = 0; i < elements.length && !run.cancelled; i += SCAN_GROUP_SIZE) {
+      const group = elements.slice(i, i + SCAN_GROUP_SIZE);
+      for (const element of group) {
+        intersectionObserverRef.current?.unobserve(element);
+        pending.delete(element);
+      }
+      await Promise.all(group.map(processContent));
+      if (!run.cancelled) {
+        setScan({ done: Math.min(i + SCAN_GROUP_SIZE, elements.length), total: elements.length });
+      }
+      setPendingCount(pending.size);
+    }
+
+    if (scanRunRef.current === run) scanRunRef.current = null;
+    setScan(null);
+  }, [processContent]);
+
+  const cancelScan = useCallback(() => {
+    if (scanRunRef.current) scanRunRef.current.cancelled = true;
+    scanRunRef.current = null;
+    setScan(null);
+  }, []);
+
+  // Stop reading ahead if the AI turns out not to be set up
+  useEffect(() => onNoProvider(cancelScan), [cancelScan]);
+
+  // Let the toolbar popup show what was found on this page
+  useEffect(() => {
+    const listener = (
+      message: { type?: string },
+      _sender: unknown,
+      sendResponse: (response: unknown) => void
+    ) => {
+      if (message?.type !== 'GET_PAGE_SUMMARY') return;
+      const products = summaryRef.current.products;
+      sendResponse({
+        productCount: products.length,
+        commentsRead: summaryRef.current.commentsRead,
+        topPick: topPick(products)?.name ?? null,
+      });
+    };
+    browser.runtime.onMessage.addListener(listener);
+    return () => browser.runtime.onMessage.removeListener(listener);
+  }, []);
 
   // Set up the IntersectionObserver for lazy processing
   useEffect(() => {
@@ -320,6 +415,7 @@ export function ProductDetectorApp({ ctx, siteConfig }: Props) {
             processContent(element);
           }
         }
+        setPendingCount(pendingElementsRef.current.size);
       },
       {
         // Start processing slightly before element enters viewport
@@ -345,28 +441,51 @@ export function ProductDetectorApp({ ctx, siteConfig }: Props) {
     };
   }, [ctx, siteConfig, onContentFound]);
 
+  // Match the host page: light or dark, and follow it if the page switches
+  const portalTarget = useContext(PortalTargetContext);
+  useEffect(() => {
+    const root = portalTarget?.getRootNode();
+    const host = root instanceof ShadowRoot ? root.host : null;
+    return watchPageTheme((theme) => {
+      host?.setAttribute('data-pd-theme', theme);
+      setHighlightTheme(theme);
+    });
+  }, [portalTarget]);
+
   // Clean up timeout on unmount
   useEffect(() => {
     return () => {
       if (hoverTimeoutRef.current) {
         clearTimeout(hoverTimeoutRef.current);
       }
+      window.clearTimeout(hoverOpenRef.current);
     };
   }, []);
 
   return (
     <>
+      <style>{UI_CSS}</style>
+      <SetupNudge />
       {hoverState && (
         <HoverCard
-          position={hoverState.position}
+          anchor={hoverState.anchor}
           productText={hoverState.productText}
           category={hoverState.category}
           sentiment={hoverState.sentiment}
+          threadProduct={findThreadProduct(threadProducts, hoverState.productText)}
+          commentElement={hoverState.commentElement}
           onMouseEnter={cancelClearHover}
           onMouseLeave={clearHoverWithDelay}
         />
       )}
-      <ThreadSummaryPanel products={threadProducts} />
+      <ThreadSummaryPanel
+        products={threadProducts}
+        commentsRead={commentsRead}
+        pendingCount={pendingCount}
+        scan={scan}
+        onScanRest={scanRest}
+        onCancelScan={cancelScan}
+      />
     </>
   );
 }

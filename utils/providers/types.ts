@@ -21,6 +21,8 @@ export interface DetectionResult {
 export interface BatchDetectionResult {
   results: DetectedProduct[][];
   error?: string;
+  /** Machine-readable reason, so the page can offer setup instead of failing silently */
+  errorCode?: 'no_provider';
 }
 
 export interface ProviderStatus {

@@ -1,9 +1,10 @@
+import { debug } from '@/utils/log';
 import { ProviderManager } from '@/utils/providers/manager';
 import { ChromeAIProvider } from '@/utils/providers/chrome-ai';
 import { BYOKProvider } from '@/utils/providers/byok';
 import { fetchProductInfo } from '@/utils/product-image-search';
 import { hashText, cacheGet, cacheSet } from '@/utils/detection-cache';
-import type { DetectedProduct } from '@/utils/providers/types';
+import type { DetectedProduct, BatchDetectionResult } from '@/utils/providers/types';
 
 const chromeAIProvider = new ChromeAIProvider();
 const providerManager = new ProviderManager();
@@ -17,7 +18,12 @@ providerManager.register(new BYOKProvider());
  */
 async function detectBatchWithCache(
   texts: string[]
-): Promise<{ results: DetectedProduct[][]; error?: string; cacheHits: number }> {
+): Promise<{
+  results: DetectedProduct[][];
+  error?: string;
+  errorCode?: 'no_provider';
+  cacheHits: number;
+}> {
   const hashes = await Promise.all(texts.map(hashText));
   const cached = await Promise.all(hashes.map((h) => cacheGet(h)));
 
@@ -26,7 +32,7 @@ async function detectBatchWithCache(
     if (cached[i] === undefined) missIndices.push(i);
   }
 
-  let detection: { results: DetectedProduct[][]; error?: string } = { results: [] };
+  let detection: BatchDetectionResult = { results: [] };
   if (missIndices.length > 0) {
     detection = await providerManager.detectProductsBatch(
       missIndices.map((i) => texts[i])
@@ -50,23 +56,36 @@ async function detectBatchWithCache(
   return {
     results,
     error: detection.error,
+    errorCode: detection.errorCode,
     cacheHits: texts.length - missIndices.length,
   };
 }
 
-export default defineBackground(async () => {
-  console.log('[Product Detector] Background service worker loaded');
+function openWelcomePage(): void {
+  browser.tabs
+    .create({ url: browser.runtime.getURL('/welcome.html') })
+    .catch((err) => console.error('[Product Detector] Could not open welcome page:', err));
+}
 
-  // Initialize provider system
-  await providerManager.initialize();
+export default defineBackground(() => {
+  debug('[Product Detector] Background service worker loaded');
+
+  // Listeners below MUST be registered synchronously: an MV3 service worker
+  // is woken by the very message or install event it needs to handle, and
+  // anything registered after an `await` misses it. So provider setup runs
+  // in the background and handlers wait on `ready` instead.
+  const ready = providerManager.initialize().catch((err) => {
+    console.error('[Provider] Initialisation failed:', err);
+  });
 
   browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     // ─── Batched product detection (preferred) ──────────────
     if (message.type === 'DETECT_PRODUCTS_BATCH') {
-      detectBatchWithCache(message.texts as string[])
+      ready
+        .then(() => detectBatchWithCache(message.texts as string[]))
         .then((result) => {
           if (result.cacheHits > 0) {
-            console.log(
+            debug(
               `[Detection] ${result.cacheHits}/${message.texts.length} from cache`
             );
           }
@@ -84,7 +103,8 @@ export default defineBackground(async () => {
 
     // ─── Single-text detection (legacy, also cached) ────────
     if (message.type === 'DETECT_PRODUCTS') {
-      detectBatchWithCache([message.text as string])
+      ready
+        .then(() => detectBatchWithCache([message.text as string]))
         .then((result) =>
           sendResponse({ products: result.results[0] ?? [], error: result.error })
         )
@@ -97,7 +117,7 @@ export default defineBackground(async () => {
 
     // ─── Provider status for popup/settings UI ─────────────
     if (message.type === 'GET_PROVIDER_STATUS') {
-      providerManager.getAllStatuses().then((statuses) => {
+      ready.then(() => providerManager.getAllStatuses()).then((statuses) => {
         sendResponse({
           active: providerManager.getActiveProviderId(),
           statuses,
@@ -153,6 +173,21 @@ export default defineBackground(async () => {
       return true;
     }
 
+    // ─── Re-check providers (after the welcome page finishes a download) ──
+    if (message.type === 'REFRESH_PROVIDERS') {
+      providerManager
+        .refresh()
+        .then(() => sendResponse({ active: providerManager.getActiveProviderId() }))
+        .catch(() => sendResponse({ active: null }));
+      return true;
+    }
+
+    // ─── Open the welcome / setup page (from the popup or the in-page prompt) ──
+    if (message.type === 'OPEN_WELCOME') {
+      openWelcomePage();
+      return false;
+    }
+
     // ─── Product info (image + search links) ──────────────
     if (message.type === 'GET_PRODUCT_INFO') {
       fetchProductInfo(message.name, message.category, message.pageContext)
@@ -173,7 +208,7 @@ export default defineBackground(async () => {
     }
 
     if (message.type === 'LOG') {
-      console.log('[Content Script]', message.data);
+      debug('[Content Script]', message.data);
       return false;
     }
 
@@ -183,7 +218,7 @@ export default defineBackground(async () => {
   // Re-initialize providers when config changes
   browser.storage.onChanged.addListener((changes) => {
     if (changes.byokConfig || changes.preferredProvider) {
-      console.log('[Provider] Config changed, refreshing...');
+      debug('[Provider] Config changed, refreshing...');
       providerManager.refresh();
     }
   });
@@ -192,7 +227,9 @@ export default defineBackground(async () => {
   browser.runtime.onInstalled.addListener(async (details) => {
     if (details.reason === 'install') {
       await browser.storage.local.set({ enabled: true });
-      console.log('[Product Detector] Installed, detection enabled');
+      debug('[Product Detector] Installed, detection enabled');
+      // First run: explain what the extension does and get the AI ready
+      openWelcomePage();
     }
   });
 });
