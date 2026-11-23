@@ -7,7 +7,7 @@
 import { useContext, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { PortalTargetContext } from '@/contexts/PortalTargetContext';
-import { buildSearchLinks } from '@/utils/affiliate';
+import { buildSearchLinks, isPhysicalProduct } from '@/utils/affiliate';
 
 export interface ThreadProduct {
   name: string;
@@ -108,6 +108,8 @@ export function ThreadSummaryPanel({ products }: Props) {
         {sorted.map((p) => {
           const v = verdict(p);
           const links = buildSearchLinks(p.category ? `${p.name} ${p.category}` : p.name);
+          // Software/services: Shop button goes to Google instead of Amazon
+          const shopUrl = isPhysicalProduct(p.category) ? links.amazon : links.google;
           return (
             <div
               key={p.name.toLowerCase()}
@@ -146,10 +148,10 @@ export function ThreadSummaryPanel({ products }: Props) {
                 </div>
               </div>
               <a
-                href={links.amazon}
+                href={shopUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                title="Search on Amazon"
+                title={isPhysicalProduct(p.category) ? 'Search on Amazon' : 'Search on Google'}
                 style={{
                   padding: '5px 10px',
                   backgroundColor: '#ff9900',
