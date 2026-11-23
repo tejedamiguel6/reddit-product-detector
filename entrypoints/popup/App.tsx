@@ -1,3 +1,4 @@
+import { debug } from '@/utils/log';
 import { useEffect, useState } from 'react';
 import {
   getSites,
@@ -18,6 +19,13 @@ type ProviderStatus = {
   available: boolean;
   status: string;
   message?: string;
+};
+
+/** What the content script reports about the page in the current tab */
+type PageSummary = {
+  productCount: number;
+  commentsRead: number;
+  topPick: string | null;
 };
 
 type BYOKConfig = {
@@ -43,6 +51,7 @@ export function App() {
   const [chromeAIDownloading, setChromeAIDownloading] = useState(false);
   const [serperKey, setSerperKey] = useState('');
   const [serperSaved, setSerperSaved] = useState(false);
+  const [pageSummary, setPageSummary] = useState<PageSummary | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -59,10 +68,18 @@ export function App() {
           } catch { /* Invalid URL */ }
         }
 
+        // What has been found on this page (no answer = not running here)
+        if (tabs[0]?.id) {
+          browser.tabs
+            .sendMessage(tabs[0].id, { type: 'GET_PAGE_SUMMARY' })
+            .then((summary) => setPageSummary((summary as PageSummary) ?? null))
+            .catch(() => setPageSummary(null));
+        }
+
         // Provider status — may fail if service worker is waking up
         try {
           const providerResult = await browser.runtime.sendMessage({ type: 'GET_PROVIDER_STATUS' });
-          console.log('[Popup] Provider result:', JSON.stringify(providerResult));
+          debug('[Popup] Provider result:', JSON.stringify(providerResult));
           if (providerResult) {
             const pr = providerResult as { active: string | null; statuses: Record<string, ProviderStatus> };
             setActiveProvider(pr.active);
@@ -263,6 +280,63 @@ export function App() {
     return s.status;
   };
 
+  const openWelcome = () => {
+    browser.runtime.sendMessage({ type: 'OPEN_WELCOME' }).catch(() => {});
+    window.close();
+  };
+
+  /** The one thing worth knowing first: is it working on this page? */
+  const getPageStatus = (): {
+    dot: string;
+    title: string;
+    detail: string;
+    needsSetup?: boolean;
+  } => {
+    if (!activeProvider) {
+      return {
+        dot: 'dot-downloadable',
+        title: 'Needs a one-time setup',
+        detail: "The AI that reads comments isn't ready yet.",
+        needsSetup: true,
+      };
+    }
+    const site = currentHostname ? sites.find((s) => s.hostname === currentHostname) : undefined;
+    if (!site?.enabled) {
+      return {
+        dot: 'dot-available',
+        title: 'Not active on this site',
+        detail: currentHostname
+          ? 'Add or switch on this site below to find products here.'
+          : 'Open a Reddit or Hacker News thread to use it.',
+      };
+    }
+    if (!pageSummary) {
+      return {
+        dot: 'dot-active',
+        title: 'Active on this site',
+        detail: "Reload the page if you don't see anything underlined.",
+      };
+    }
+    const comments = `${pageSummary.commentsRead} comment${pageSummary.commentsRead === 1 ? '' : 's'}`;
+    if (pageSummary.productCount === 0) {
+      return {
+        dot: 'dot-active',
+        title: 'Reading this page',
+        detail:
+          pageSummary.commentsRead > 0
+            ? `No products in the ${comments} read so far.`
+            : 'Scroll through the comments to start.',
+      };
+    }
+    return {
+      dot: 'dot-active',
+      title: `${pageSummary.productCount} product${pageSummary.productCount === 1 ? '' : 's'} found on this page`,
+      detail: pageSummary.topPick
+        ? `Top pick: ${pageSummary.topPick}. From ${comments} read.`
+        : `From ${comments} read so far.`,
+    };
+  };
+
   if (loading) {
     return (
       <div className="popup-container">
@@ -274,9 +348,26 @@ export function App() {
   return (
     <div className="popup-container">
       <h1>Product Detector</h1>
-      <p className="description">
-        AI-powered product detection for forums
-      </p>
+      <p className="description">See what a thread actually recommends.</p>
+
+      {/* Status for the page in this tab */}
+      {(() => {
+        const status = getPageStatus();
+        return (
+          <div className="status-card">
+            <span className={`status-dot ${status.dot}`} />
+            <div>
+              <div className="status-title">{status.title}</div>
+              <div className="status-detail">{status.detail}</div>
+              {status.needsSetup && (
+                <button type="button" className="status-action" onClick={openWelcome}>
+                  Finish setup
+                </button>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Provider status bar */}
       <div className="provider-bar" onClick={() => setShowSettings(!showSettings)}>
@@ -284,10 +375,10 @@ export function App() {
           <span className={`status-dot ${getStatusDot(activeProvider || '')}`} />
           <span className="provider-bar-label">
             {activeProvider === 'chrome-ai'
-              ? 'Built-in AI'
+              ? "AI: Chrome's built-in, on your device"
               : activeProvider === 'byok'
-                ? 'API Key'
-                : 'No provider'}
+                ? 'AI: your API key'
+                : 'AI: not set up'}
           </span>
         </div>
         <span className="provider-bar-toggle">{showSettings ? '▲' : '▼'}</span>
@@ -379,35 +470,38 @@ export function App() {
             </div>
           </div>
 
-          {/* Image Search (Serper) */}
-          <div className="provider-option">
-            <div className="provider-option-header">
-              <span className={`status-dot ${serperKey.trim() ? 'dot-active' : 'dot-unavailable'}`} />
-              <span className="provider-option-name">Product Images</span>
-              <span className="provider-option-badge">
-                {serperKey.trim() ? 'Configured' : 'Optional'}
-              </span>
+          <details className="advanced">
+            <summary>Advanced: product pictures</summary>
+            {/* Image Search (Serper) */}
+            <div className="provider-option">
+              <div className="provider-option-header">
+                <span className={`status-dot ${serperKey.trim() ? 'dot-active' : 'dot-available'}`} />
+                <span className="provider-option-name">Product pictures</span>
+                <span className="provider-option-badge">
+                  {serperKey.trim() ? 'On' : 'Off'}
+                </span>
+              </div>
+              <p className="provider-option-desc">
+                Optional. Add a key from serper.dev, an image search service, to show product pictures in hover cards. The product's name, category and forum topic are sent to it.
+              </p>
+              <div className="byok-form">
+                <input
+                  type="password"
+                  className="byok-input"
+                  value={serperKey}
+                  onChange={(e) => setSerperKey(e.target.value)}
+                  placeholder="Serper API Key (serper.dev)"
+                />
+                <button
+                  className="btn-save-byok"
+                  onClick={handleSaveSerper}
+                  disabled={!serperKey.trim()}
+                >
+                  {serperSaved ? '✓ Saved' : 'Save'}
+                </button>
+              </div>
             </div>
-            <p className="provider-option-desc">
-              Serper.dev API key for product images in hover cards. Free tier: 2,500 searches/month.
-            </p>
-            <div className="byok-form">
-              <input
-                type="password"
-                className="byok-input"
-                value={serperKey}
-                onChange={(e) => setSerperKey(e.target.value)}
-                placeholder="Serper API Key (serper.dev)"
-              />
-              <button
-                className="btn-save-byok"
-                onClick={handleSaveSerper}
-                disabled={!serperKey.trim()}
-              >
-                {serperSaved ? '✓ Saved' : 'Save'}
-              </button>
-            </div>
-          </div>
+          </details>
         </div>
       )}
 
@@ -464,34 +558,24 @@ export function App() {
       </div>
 
       <p className="hint">
-        Products will be highlighted in yellow on enabled sites.
+        Underlines: solid green = recommended, dashed red = warned against, dotted grey = just mentioned.
       </p>
 
-      {/* Support button */}
-      {BUY_ME_A_COFFEE_URL && (
-        <a
-          href={BUY_ME_A_COFFEE_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '6px',
-            padding: '10px',
-            marginTop: '10px',
-            fontSize: '13px',
-            fontWeight: 600,
-            color: '#000',
-            backgroundColor: '#ffdd00',
-            borderRadius: '8px',
-            textDecoration: 'none',
-            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.3)',
-          }}
-        >
-          ☕ Enjoying this? Buy me a coffee
-        </a>
-      )}
+      <div className="footer-links">
+        <button type="button" className="link-button" onClick={openWelcome}>
+          Setup and privacy
+        </button>
+        {BUY_ME_A_COFFEE_URL && (
+          <a
+            className="link-button"
+            href={BUY_ME_A_COFFEE_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Buy me a coffee
+          </a>
+        )}
+      </div>
     </div>
   );
 }

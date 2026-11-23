@@ -40,6 +40,7 @@ export default defineConfig({
       128: "assets/icons/icon-128.png",
     },
     action: {
+      default_title: "Product Detector",
       default_icon: {
         16: "assets/icons/icon-16.png",
         48: "assets/icons/icon-48.png",

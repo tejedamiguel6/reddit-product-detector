@@ -1,3 +1,4 @@
+import { debug } from '@/utils/log';
 /**
  * Dynamic site registration for user-added forums.
  *
@@ -58,7 +59,7 @@ export async function registerSiteScript(hostname: string): Promise<void> {
       persistAcrossSessions: true,
     },
   ]);
-  console.log('[Dynamic Sites] Registered content script for:', hostname);
+  debug('[Dynamic Sites] Registered content script for:', hostname);
 }
 
 /** Unregister the content script when a site is removed */

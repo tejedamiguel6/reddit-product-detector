@@ -1,3 +1,4 @@
+import { debug } from '@/utils/log';
 /**
  * Product image search using Serper.dev Google Images API.
  * Runs in the background service worker — no separate API server needed.
@@ -111,7 +112,7 @@ async function searchImage(
       if (ctx) query = `${query} ${ctx}`;
     }
 
-    console.log(`[Image Search] Query: "${query}"`);
+    debug(`[Image Search] Query: "${query}"`);
 
     const response = await fetch('https://google.serper.dev/images', {
       method: 'POST',

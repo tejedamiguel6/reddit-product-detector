@@ -24,6 +24,8 @@ declare global {
 
   interface LanguageModelCreateOptions {
     initialPrompts?: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
+    /** Called once with an EventTarget that emits `downloadprogress` events */
+    monitor?: (monitor: EventTarget) => void;
   }
 
   // eslint-disable-next-line no-var
@@ -61,7 +63,8 @@ export class ChromeAIProvider implements LLMProvider {
           return {
             available: false,
             status: 'downloadable',
-            message: 'Free on-device AI. Requires a one-time 22GB download.',
+            message:
+              'Free and on-device. One-time model download; Chrome needs about 22 GB of free disk space for it.',
           };
         case 'downloading':
           return {

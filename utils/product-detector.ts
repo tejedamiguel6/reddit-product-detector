@@ -1,3 +1,4 @@
+import { debug } from '@/utils/log';
 /**
  * Product detection logic.
  * Routes detection through the background service worker,
@@ -47,6 +48,16 @@ let pendingRequests: PendingRequest[] = [];
 let batchTimer: ReturnType<typeof setTimeout> | null = null;
 let flushInFlight = false;
 
+// ─── "No AI ready" signal ────────────────────────────────
+// Lets the page UI offer setup once instead of silently finding nothing.
+const noProviderListeners = new Set<() => void>();
+
+/** Subscribe to "no AI provider is ready". Returns an unsubscribe function. */
+export function onNoProvider(listener: () => void): () => void {
+  noProviderListeners.add(listener);
+  return () => noProviderListeners.delete(listener);
+}
+
 function enqueueDetection(text: string): Promise<DetectedProduct[]> {
   return new Promise((resolve) => {
     pendingRequests.push({ text, resolve });
@@ -76,7 +87,9 @@ async function flushBatch(): Promise<void> {
       texts: batch.map((r) => r.text),
     });
 
-    if (result?.error) {
+    if (result?.errorCode === 'no_provider') {
+      noProviderListeners.forEach((listener) => listener());
+    } else if (result?.error) {
       console.error('[Product Detector] Provider error:', result.error);
     }
 
@@ -157,7 +170,7 @@ export async function detectProducts(text: string): Promise<ProductMatch[]> {
   const products = await enqueueDetection(textToAnalyze);
 
   if (products.length > 0) {
-    console.log('[Product Detector] Detected products:', products);
+    debug('[Product Detector] Detected products:', products);
   }
 
   return findProductPositions(text, products);
