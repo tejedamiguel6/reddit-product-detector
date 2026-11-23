@@ -7,6 +7,12 @@ import {
   type SiteConfig,
 } from '@/utils/site-settings';
 import { BUY_ME_A_COFFEE_URL } from '@/utils/affiliate';
+import {
+  requestSiteAccess,
+  registerSiteScript,
+  unregisterSiteScript,
+  releaseSiteAccess,
+} from '@/utils/dynamic-sites';
 
 type ProviderStatus = {
   available: boolean;
@@ -164,12 +170,35 @@ export function App() {
     notifyTabs();
   };
 
+  /** Hostnames covered by the manifest's default host permissions */
+  const isDefaultSite = (hostname: string) =>
+    hostname === 'reddit.com' ||
+    hostname.endsWith('.reddit.com') ||
+    hostname === 'news.ycombinator.com' ||
+    hostname === 'producthunt.com' ||
+    hostname.endsWith('.producthunt.com');
+
+  /**
+   * For non-default sites: ask the user to grant access to that specific
+   * origin (Chrome shows a one-time prompt) and register the content script.
+   * Returns false if the user declined.
+   */
+  const ensureSiteAccess = async (hostname: string): Promise<boolean> => {
+    if (isDefaultSite(hostname)) return true;
+    const granted = await requestSiteAccess(hostname);
+    if (!granted) return false;
+    await registerSiteScript(hostname);
+    return true;
+  };
+
   const handleAddSite = async () => {
     if (!newSite.trim()) return;
 
     let hostname = newSite.trim().toLowerCase();
     hostname = hostname.replace(/^https?:\/\//, '');
     hostname = hostname.split('/')[0];
+
+    if (!(await ensureSiteAccess(hostname))) return;
 
     const updated = await addSite(hostname);
     setSites(updated);
@@ -179,6 +208,7 @@ export function App() {
 
   const handleAddCurrentSite = async () => {
     if (!currentHostname) return;
+    if (!(await ensureSiteAccess(currentHostname))) return;
     const updated = await addSite(currentHostname);
     setSites(updated);
     notifyTabs();
@@ -187,6 +217,10 @@ export function App() {
   const handleRemoveSite = async (hostname: string) => {
     const updated = await removeSite(hostname);
     setSites(updated);
+    if (!isDefaultSite(hostname)) {
+      await unregisterSiteScript(hostname);
+      await releaseSiteAccess(hostname);
+    }
     notifyTabs();
   };
 

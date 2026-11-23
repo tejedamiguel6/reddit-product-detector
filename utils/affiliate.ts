@@ -43,3 +43,40 @@ export function buildSearchLinks(searchQuery: string): SearchLinks {
 export function affiliateEnabled(): boolean {
   return AMAZON_AFFILIATE_TAG.length > 0;
 }
+
+// Categories where an Amazon search makes no sense (software, websites,
+// services) — showing an Amazon button for "Notion" or "monday.com" looks
+// broken. For these, the UI should offer Google only.
+const NON_PHYSICAL_KEYWORDS = [
+  'software',
+  'app',
+  'application',
+  'saas',
+  'service',
+  'website',
+  'web app',
+  'platform',
+  'subscription',
+  'streaming',
+  'ai tool',
+  'browser extension',
+  'plugin',
+  'api',
+  'operating system',
+  'programming',
+  'framework',
+  'library',
+];
+
+// Whole-word match (optional plural "s") so "app" doesn't catch "apparel" or
+// "appliance", and "api" doesn't catch "rapid".
+const NON_PHYSICAL_PATTERN = new RegExp(
+  `\\b(?:${NON_PHYSICAL_KEYWORDS.join('|')})s?\\b`,
+  'i',
+);
+
+/** True if the product is likely something you can buy on Amazon */
+export function isPhysicalProduct(category?: string): boolean {
+  if (!category) return true; // unknown — assume physical
+  return !NON_PHYSICAL_PATTERN.test(category);
+}

@@ -4,7 +4,14 @@ import { ProductDetectorApp } from '@/components/ProductDetectorApp';
 import { isCurrentSiteEnabled, getCurrentSiteConfig } from '@/utils/site-settings';
 
 export default defineContentScript({
-  matches: ['<all_urls>'],
+  // Default sites only — keep in sync with wxt.config.ts DEFAULT_HOST_MATCHES.
+  // User-added sites get a dynamically registered copy of this script
+  // (utils/dynamic-sites.ts) after the user grants per-site permission.
+  matches: [
+    '*://*.reddit.com/*',
+    '*://news.ycombinator.com/*',
+    '*://*.producthunt.com/*',
+  ],
   cssInjectionMode: 'ui',
   runAt: 'document_idle',
 
