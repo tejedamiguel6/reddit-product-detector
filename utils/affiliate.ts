@@ -1,17 +1,22 @@
 /**
  * Affiliate / shopping link builder — single source of truth.
  *
- * 💰 TO START EARNING:
- * 1. Sign up at https://affiliate-program.amazon.com (Amazon Associates)
- * 2. Get your tracking ID (looks like "yourname-20")
- * 3. Put it in AMAZON_AFFILIATE_TAG below and rebuild the extension
- *
- * Note: Amazon requires you to disclose affiliate links to users (e.g. a
- * small "affiliate link" note in the hover card) and to make your first
- * qualified sales within 180 days to keep the account active.
+ * Amazon buttons are plain search links: a feature for users, not income.
  */
 
-/** Your Amazon Associates tracking ID, e.g. "yourname-20". Empty = plain links. */
+/**
+ * ⚠️ KEEP THIS EMPTY. Amazon Associates does not allow affiliate links in
+ * browser extensions (Participation Requirements, section 7(a): no links "on
+ * or in connection with" client-side software such as browser extensions),
+ * even links that only appear after a click. Breaking it can close your
+ * Associates account and forfeit earned commissions.
+ *
+ * Only fill this in if Amazon has given you a separate written agreement
+ * that permits it. Use your Associates tag in your Substack posts instead.
+ * https://affiliate-program.amazon.com/help/operating/participation/
+ *
+ * Checked 2026-11-23.
+ */
 export const AMAZON_AFFILIATE_TAG = '';
 
 /**
